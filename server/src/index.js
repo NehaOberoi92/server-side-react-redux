@@ -1,24 +1,41 @@
-import "babel-polyfill";
-import express from "express";
-import { matchRoutes } from "react-router-config";
-import renderer from "./helpers/renderer";
-import createStore from "./helpers/createStore";
-import Routes from "./client/Routes";
+import 'babel-polyfill';
+import express from 'express';
+import { matchRoutes } from 'react-router-config';
+import proxy from 'express-http-proxy';
+import renderer from './helpers/renderer';
+import createStore from './helpers/createStore';
+import Routes from './client/Routes';
 const app = express();
 
-app.use(express.static("public"));
+app.use(express.static('public'));
 
-app.get("*", (req, res) => {
-  const store = createStore();
+//Proxy setup
+app.use(
+  '/api',
+  proxy('http://react-ssr-api.herokuapp.com', {
+    proxyReqOptDecorator(opts) {
+      opts.headers['x-forwarded-host'] = 'localhost:3000'; //This code not required
+      return opts;
+    }
+  })
+);
+
+app.get('*', (req, res) => {
+  const store = createStore(req);
   const promises = matchRoutes(Routes, req.path).map(({ route }) => {
     return route.loadData ? route.loadData(store) : null;
   });
 
   Promise.all(promises).then(() => {
-    res.send(renderer(req, store));
+    const context = {};
+    const content = renderer(req, store, context);
+    if (context.notFound) {
+      res.status(404);
+    }
+    res.send(content);
   });
 });
 
-app.listen(8081, () => {
-  console.log("Listening at 8081");
+app.listen(3000, () => {
+  console.log('Listening at 8081');
 });
